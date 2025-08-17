@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Dark Themed Chat — улучшено</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        :root{
+            --bg:#0b0f12; --panel:#0f1417; --text:#e6eef3; --muted:#9fb3bd; --accent:#1f8feb;
+            --mine:#153a5b; --other:#111519;
+        }
+        body.light{
+            --bg:#f3f7fb; --panel:#ffffff; --text:#0b1220; --muted:#465a66; --accent:#0b6bd6; --mine:#cfe6ff; --other:#ffffff;
+        }
+        *{box-sizing:border-box}
+        body{
+            background:var(--bg); color:var(--text); font-family:Segoe UI, Roboto, Arial, sans-serif; margin:0; min-height:100vh; padding:18px;
+        }
+
+        /* Wider on desktop, adaptive on small screens */
+        .chat-wrapper{max-width:1200px;margin:0 auto;width:100%}
+        .chat-container{margin:12px 0;padding:14px;background:var(--panel);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.45);}
+        header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 4px 12px}
+        header h1{margin:0;font-size:1.15rem}
+        #clock{font-size:0.95rem;color:var(--muted)}
+        nav{display:flex;gap:8px;padding:8px 0;flex-wrap:wrap}
+        nav button{background:transparent;border:1px solid rgba(255,255,255,.06);color:var(--text);padding:8px 12px;border-radius:8px;cursor:pointer}
+        nav button.active{background:var(--accent);color:#fff;border-color:transparent}
+        main{display:flex;flex-direction:column;padding:8px 0}
+        /* use viewport-relative height so it fits on mobile/desktop */
+        .messages{height:calc(60vh);min-height:260px;overflow:auto;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,.03);margin-bottom:12px;background:linear-gradient(180deg, rgba(255,255,255,.01), transparent)}
+        .msg-row{display:flex;gap:10px;margin-bottom:12px;align-items:flex-end}
+        .msg-row.mine{flex-direction:row-reverse}
+        .avatar{
+            width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;background:linear-gradient(135deg,var(--accent),#4fb3ff);
+            flex-shrink:0;overflow:hidden;
+        }
+        .avatar img{width:100%;height:100%;object-fit:cover;display:block}
+        .bubble{
+            max-width:74%;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.02);position:relative;color:var(--text);
+            box-shadow:0 2px 6px rgba(0,0,0,.3);
+        }
+        .msg-row.mine .bubble{background:linear-gradient(180deg,var(--mine),#1b5a80);color:#fff}
+        .meta{display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:0.85rem;color:var(--muted)}
+        .nick{font-weight:700;color:var(--accent)}
+        .time{font-size:0.75rem;color:var(--muted);margin-left:auto}
+        .reply-snippet{border-left:3px solid rgba(255,255,255,.06);padding-left:8px;color:var(--muted);font-size:0.85rem;margin-bottom:8px;border-radius:6px;background:rgba(255,255,255,.01)}
+        .bubble p{margin:0;white-space:pre-wrap;word-break:break-word}
+        .bubble img,.bubble video{max-width:360px;border-radius:8px;display:block;margin-top:8px}
+        .controls{display:flex;gap:8px;margin-top:8px}
+        .btn-plain{background:transparent;border:1px solid rgba(255,255,255,.06);color:var(--muted);padding:6px 8px;border-radius:8px;cursor:pointer;font-size:0.85rem}
+        .btn-plain:hover{opacity:.95}
+        form{display:flex;gap:8px;align-items:flex-end}
+        .input-area{flex:1}
+        form textarea{width:100%;min-height:48px;max-height:150px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.04);background:transparent;color:var(--text);resize:vertical}
+        form button.send{padding:10px 14px;border-radius:10px;border:none;background:var(--accent);color:#fff;cursor:pointer;min-width:84px}
+        #media-preview img,#media-preview video{max-width:180px;border-radius:8px;display:block;margin-top:8px}
+        .panels{display:flex;gap:12px;flex-wrap:wrap}
+        .panel{flex:1;min-width:240px;padding:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,.02)}
+        .small{font-size:0.85rem;color:var(--muted)}
+        .reply-bar{display:flex;align-items:center;gap:12px;padding:8px;border-radius:8px;background:rgba(255,255,255,.02);margin-bottom:8px}
+        .reply-bar .meta{margin:0;color:var(--muted)}
+        .reply-cancel{background:transparent;border:1px solid rgba(255,255,255,.06);color:var(--muted);padding:6px 8px;border-radius:8px;cursor:pointer}
+        /* responsive */
+        @media (max-width:960px){
+            .messages{height:50vh}
+        }
+        @media (max-width:640px){
+            body{padding:12px}
+            .chat-container{padding:10px}
+            .bubble{max-width:100%}
+            .avatar{width:36px;height:36px}
+            .messages{height:55vh}
+            nav{justify-content:center}
+            form{flex-direction:column;align-items:stretch}
+            .input-area{order:0}
+            form > div[style] {display:flex;flex-wrap:wrap}
+            form button.send{min-width:100%}
+        }
+    </style>
+</head>
+<body>
+<div class="chat-wrapper">
+    <div class="chat-container">
+        <header>
+            <h1 id="app-title">Dark Themed Chat</h1>
+            <div style="display:flex;align-items:center;gap:12px">
+                <div id="user-avatar-display" class="avatar" title="">
+                    <!-- avatar img or initial -->
+                </div>
+                <div id="clock">--:--:--</div>
+            </div>
+        </header>
+
+        <main>
+            <div id="messages" class="messages" aria-live="polite"></div>
+
+            <div id="reply-preview" class="reply-bar" style="display:none">
+                <div style="display:flex;flex-direction:column;flex:1">
+                    <div class="meta"><strong id="reply-nick"></strong><span style="margin-left:8px;color:var(--muted)" id="reply-truncated"></span></div>
+                </div>
+                <button id="cancel-reply" class="reply-cancel">Cancel</button>
+            </div>
+
+            <form id="chat-form" aria-label="Send message">
+                <div class="input-area">
+                    <textarea id="message-input" placeholder="Type a message..." autocomplete="off"></textarea>
+                    <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <input type="file" id="file-input" accept="image/*,video/*">
+                        <div id="media-preview"></div>
+                    </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                    <button type="submit" class="send" id="send-btn">Send</button>
+                    <button type="button" id="clear-storage" class="btn-plain" title="Clear local messages">Clear</button>
+                </div>
+            </form>
+        </main>
+    </div>
+
+    <nav>
+        <button id="chat-tab" class="active">Chat</button>
+        <button id="media-tab">Media</button>
+        <button id="settings-tab">Settings</button>
+    </nav>
+
+    <div id="media" class="panel hidden">
+        <h2 id="media-heading">Media</h2>
+        <input type="file" id="file-input-2" accept="image/*,video/*">
+        <div id="media-preview-2"></div>
+    </div>
+
+    <div id="settings" class="panel hidden">
+        <h2 id="settings-heading">Settings</h2>
+
+        <div style="margin-top:6px">
+            <label for="theme-select" id="label-theme">Choose Theme:</label>
+            <select id="theme-select">
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+            </select>
+        </div>
+
+        <div style="margin-top:12px">
+            <label for="lang-select" id="label-lang">Language:</label>
+            <select id="lang-select" style="margin-left:8px;">
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+            </select>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <div>
+                <label for="avatar-input" id="label-avatar">Upload avatar:</label><br>
+                <input id="avatar-input" type="file" accept="image/*">
+                <div class="small" style="margin-top:6px" id="avatar-note">Your avatar is stored locally and shown next to your messages.</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center">
+                <div id="current-avatar" class="avatar" style="width:64px;height:64px"></div>
+                <button id="remove-avatar" class="btn-plain" style="margin-top:8px">Remove</button>
+            </div>
+        </div>
+
+        <div style="margin-top:12px">
+            <label for="nick-input" id="label-nick">Nickname:</label>
+            <input id="nick-input" type="text" placeholder="Your nickname" style="margin-left:8px;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,.06);background:transparent;color:var(--text)">
+            <div class="small" style="margin-top:6px" id="nick-desc">Nickname сохраняется локально и показывается рядом с сообщениями.</div>
+        </div>
+    </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function () {
+    // small identity
+    const $ = s => document.querySelector(s);
+    const createId = () => Date.now() + '-' + Math.random().toString(36).slice(2,8);
+
+    // LS keys
+    const LS_MESSAGES = 'chat_messages_v2';
+    const LS_THEME = 'chat_theme_v2';
+    const LS_NICK = 'chat_nick_v2';
+    const LS_LANG = 'chat_lang_v2';
+    const LS_AVATAR = 'chat_avatar_v2';
+
+    // elements
+    const messagesEl = $('#messages');
+    const form = $('#chat-form');
+    const input = $('#message-input');
+    const fileInput = $('#file-input');
+    const mediaPreview = $('#media-preview');
+    const themeSelect = $('#theme-select');
+    const nickInput = $('#nick-input');
+    const clockEl = $('#clock');
+    const replyPreview = $('#reply-preview');
+    const replyNickEl = $('#reply-nick');
+    const replyTruncated = $('#reply-truncated');
+    const cancelReplyBtn = $('#cancel-reply');
+    const clearStorageBtn = $('#clear-storage');
+    const appTitle = $('#app-title');
+    const chatTabBtn = $('#chat-tab');
+    const mediaTabBtn = $('#media-tab');
+    const settingsTabBtn = $('#settings-tab');
+    const mediaHeading = $('#media-heading');
+    const settingsHeading = $('#settings-heading');
+    const langSelect = $('#lang-select');
+    const avatarInput = $('#avatar-input');
+    const currentAvatar = $('#current-avatar');
+    const userAvatarDisplay = $('#user-avatar-display');
+    const removeAvatarBtn = $('#remove-avatar');
+    const sendBtn = $('#send-btn');
+    const nickDesc = $('#nick-desc');
+    const labelNick = $('#label-nick');
+    const labelTheme = $('#label-theme');
+    const labelLang = $('#label-lang');
+    const labelAvatar = $('#label-avatar');
+
+    // socket.io realtime connection
+    let socket = null;
+    try {
+        socket = io();
+        socket.on('connect', () => console.log('socket connected', socket.id));
+        socket.on('init', (serverMessages) => {
+            try {
+                const local = loadMessages();
+                const ids = new Set(local.map(m => m.id));
+                const merged = local.slice();
+                serverMessages.forEach(m => { if (!ids.has(m.id)) merged.push(m); });
+                saveMessages(merged);
+                renderMessages();
+            } catch (e) { console.warn('init merge failed', e); }
+        });
+        socket.on('message', (m) => {
+            try {
+                const list = loadMessages();
+                if (list.find(x => x.id === m.id)) return;
+                list.push(m);
+                saveMessages(list);
+                renderMessages();
+            } catch (e) { console.warn('incoming message error', e); }
+        });
+        socket.on('delete', (id) => {
+            try {
+                const list = loadMessages();
+                const idx = list.findIndex(x => x.id === id);
+                if (idx !== -1) {
+                    list.splice(idx, 1);
+                    saveMessages(list);
+                    renderMessages();
+                }
+            } catch (e) { console.warn('delete sync error', e); }
+        });
+    } catch (e) {
+        console.warn('socket.io client failed to load or connect', e);
+        socket = null;
+    }
+
+    // Tabs
+    const tabs = {
+        chat: {btn: chatTabBtn, panel: document.querySelector('main')},
+        media: {btn: mediaTabBtn, panel: $('#media')},
+        settings: {btn: settingsTabBtn, panel: $('#settings')}
+    };
+    function showTab(name){
+        Object.keys(tabs).forEach(k=>{
+            const t = tabs[k];
+            if (!t.btn || !t.panel) return;
+            if (k===name){ t.btn.classList.add('active'); t.panel.classList.remove('hidden'); }
+            else { t.btn.classList.remove('active'); t.panel.classList.add('hidden'); }
+        });
+    }
+    Object.keys(tabs).forEach(k => { if (tabs[k].btn) tabs[k].btn.addEventListener('click', ()=>showTab(k)); });
+    showTab('chat');
+
+    // clock
+    function updateClock(){ clockEl.textContent = new Date().toLocaleTimeString(); }
+    updateClock(); setInterval(updateClock,1000);
+
+    // i18n
+    const translations = {
+        en: {
+            title: 'Dark Themed Chat — enhanced',
+            chat: 'Chat', media: 'Media', settings: 'Settings',
+            send: 'Send', clear: 'Clear', cancel: 'Cancel', reply: 'Reply', delete: 'Delete',
+            typeMessage: 'Type a message...', uploadAvatar: 'Upload avatar', remove: 'Remove',
+            chooseTheme: 'Choose Theme:', nickname: 'Nickname:', nickDesc: 'Nickname is saved locally and shown next to messages.',
+            mediaHeading: 'Media', settingsHeading: 'Settings',
+            deleteConfirm: 'Delete this message?', clearConfirm: 'Clear all local messages?', previewNA: 'Preview not available',
+            avatarNote: 'Your avatar is stored locally and shown next to your messages.',
+            unknown: 'Unknown', you: 'You', removedOriginal: '[Original message deleted]'
+        },
+        ru: {
+            title: 'Тёмный чат — улучшено',
+            chat: 'Чат', media: 'Медиа', settings: 'Настройки',
+            send: 'Отправить', clear: 'Очистить', cancel: 'Отмена', reply: 'Ответить', delete: 'Удалить',
+            typeMessage: 'Напишите сообщение...', uploadAvatar: 'Загрузить аватар', remove: 'Удалить',
+            chooseTheme: 'Тема:', nickname: 'Ник:', nickDesc: 'Ник сохраняется локально и показывается рядом с сообщениями.',
+            mediaHeading: 'Медиа', settingsHeading: 'Настройки',
+            deleteConfirm: 'Удалить это сообщение?', clearConfirm: 'Очистить все локальные сообщения?', previewNA: 'Превью недоступно',
+            avatarNote: 'Ваш аватар хранится локально и показывается рядом с вашими сообщениями.',
+            unknown: 'Неизвестно', you: 'Вы', removedOriginal: '[Исходное сообщение удалено]'
+        }
+    };
+    function getLang(){ return localStorage.getItem(LS_LANG) || (navigator.language && navigator.language.startsWith('ru') ? 'ru' : 'en'); }
+    let currentLang = getLang();
+    function t(key){ return (translations[currentLang] && translations[currentLang][key]) || translations['en'][key] || key; }
+    function applyLanguage(lang){
+        currentLang = lang;
+        localStorage.setItem(LS_LANG, lang);
+        document.documentElement.lang = lang === 'ru' ? 'ru' : 'en';
+        // update static UI
+        appTitle.textContent = t('title');
+        chatTabBtn.textContent = t('chat');
+        mediaTabBtn.textContent = t('media');
+        settingsTabBtn.textContent = t('settings');
+        mediaHeading.textContent = t('mediaHeading');
+        settingsHeading.textContent = t('settingsHeading');
+        sendBtn.textContent = t('send');
+        clearStorageBtn.textContent = t('clear');
+        cancelReplyBtn.textContent = t('cancel');
+        $('#message-input').placeholder = t('typeMessage');
+        labelTheme.textContent = t('chooseTheme');
+        labelLang.textContent = 'Language:';
+        labelAvatar.textContent = t('uploadAvatar');
+        $('#avatar-note') && ($('#avatar-note').textContent = t('avatarNote'));
+        nickDesc.textContent = t('nickDesc');
+        labelNick.textContent = t('nickname');
+        renderMessages(); // rerender dynamic labels
+    }
+    // initialize language UI
+    langSelect.value = currentLang;
+    applyLanguage(currentLang);
+    langSelect.addEventListener('change', ()=>applyLanguage(langSelect.value));
+
+    // storage helpers
+    function loadMessages(){ try { return JSON.parse(localStorage.getItem(LS_MESSAGES) || '[]'); } catch(e){ return []; } }
+    function saveMessages(list){ localStorage.setItem(LS_MESSAGES, JSON.stringify(list)); }
+
+    // reply state
+    let replyTargetId = null;
+
+    function truncateText(t, len=80){ if (!t) return ''; t = t.replace(/\s+/g,' ').trim(); return t.length>len ? t.slice(0,len-1)+'…' : t; }
+
+    // render avatar element (either img or initial)
+    function renderAvatarEl(container, avatarData, nick){
+        container.innerHTML = '';
+        if (avatarData){
+            const img = document.createElement('img'); img.src = avatarData; img.alt = nick || '';
+            container.appendChild(img);
+        } else {
+            container.textContent = (nick || 'U').slice(0,1).toUpperCase();
+        }
+    }
+
+    // render messages
+    function renderMessages(){
+        const list = loadMessages();
+        messagesEl.innerHTML = '';
+        const localNick = localStorage.getItem(LS_NICK) || '';
+        const localNickUsed = localNick || t('you');
+        list.forEach(msg=>{
+            const row = document.createElement('div');
+            row.className = 'msg-row';
+            const isMine = (msg.nick || '') === (localNick || '') || ((msg.nick||'') === '' && (localNick === '' && msg.avatar === localStorage.getItem(LS_AVATAR)));
+            if (isMine) row.classList.add('mine');
+
+            // avatar
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            renderAvatarEl(avatar, msg.avatar || null, msg.nick || (msg.nick=== '' ? t('you') : null));
+
+            // bubble
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+
+            // meta (nick + time)
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            const nickSpan = document.createElement('span'); nickSpan.className = 'nick'; nickSpan.textContent = msg.nick || (isMine ? localNickUsed : t('unknown'));
+            const timeSpan = document.createElement('span'); timeSpan.className = 'time';
+            try { timeSpan.textContent = new Date(msg.time).toLocaleString(); } catch(e){ timeSpan.textContent = msg.time || ''; }
+            meta.appendChild(nickSpan);
+
+            const dot = document.createElement('span'); dot.textContent = '•'; dot.style.margin = '0 6px'; dot.style.color = 'var(--muted)';
+            meta.appendChild(dot);
+            meta.appendChild(timeSpan);
+
+            bubble.appendChild(meta);
+
+            // reply snippet
+            if (msg.replyTo) {
+                const referenced = list.find(m => m.id === msg.replyTo);
+                const snippet = document.createElement('div');
+                snippet.className = 'reply-snippet';
+                snippet.textContent = referenced ? `${referenced.nick || t('unknown')}: ${truncateText(referenced.text || (referenced.media ? '[media]' : ''), 120)}` : t('removedOriginal');
+                bubble.appendChild(snippet);
+            }
+
+            // text
+            if (msg.text) {
+                const p = document.createElement('p');
+                p.textContent = msg.text;
+                bubble.appendChild(p);
+            }
+
+            // media
+            if (msg.media) {
+                if (msg.media.type && msg.media.type.startsWith('image/')) {
+                    const img = document.createElement('img'); img.src = msg.media.url; img.alt = 'img';
+                    bubble.appendChild(img);
+                } else if (msg.media && msg.media.type && msg.media.type.startsWith('video/')) {
+                    const v = document.createElement('video'); v.src = msg.media.url; v.controls = true;
+                    bubble.appendChild(v);
+                } else {
+                    const p = document.createElement('div'); p.textContent = t('previewNA');
+                    bubble.appendChild(p);
+                }
+            }
+
+            // controls
+            const controls = document.createElement('div');
+            controls.className = 'controls';
+            const replyBtn = document.createElement('button');
+            replyBtn.className = 'btn-plain';
+            replyBtn.textContent = t('reply');
+            replyBtn.title = t('reply');
+            replyBtn.addEventListener('click', () => {
+                replyTargetId = msg.id;
+                replyNickEl.textContent = msg.nick || t('unknown');
+                replyTruncated.textContent = truncateText(msg.text || (msg.media ? '[media]' : ''), 60);
+                replyPreview.style.display = 'flex';
+                input.focus();
+            });
+            controls.appendChild(replyBtn);
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn-plain';
+            delBtn.textContent = t('delete');
+            delBtn.title = t('delete');
+            delBtn.addEventListener('click', () => {
+                if (!confirm(t('deleteConfirm'))) return;
+                deleteMessage(msg.id);
+            });
+            controls.appendChild(delBtn);
+            bubble.appendChild(controls);
+
+            // assemble
+            row.appendChild(avatar);
+            row.appendChild(bubble);
+            messagesEl.appendChild(row);
+        });
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function deleteMessage(id){
+        const list = loadMessages();
+        const idx = list.findIndex(m => m.id === id);
+        if (idx === -1) return;
+        const msg = list[idx];
+        // revoke blob urls if present
+        try {
+            // revoke any local blob urls for media, audio or voice fields
+            const revokeIfBlob = (u) => {
+            if (!u || typeof u !== 'string') return;
+            try { if (u.startsWith('blob:')) URL.revokeObjectURL(u); } catch (e) {}
+            };
+            if (msg.media && msg.media.url) revokeIfBlob(msg.media.url);
+            if (msg.voiceUrl) revokeIfBlob(msg.voiceUrl);
+            if (msg.audio) revokeIfBlob(msg.audio);
+            if (Array.isArray(msg.attachments)) {
+            msg.attachments.forEach(a => a && a.url && revokeIfBlob(a.url));
+            }
+
+            // stop/remove any playing media elements that reference this blob
+            try {
+            document.querySelectorAll('audio,video').forEach(el => {
+                try {
+                const src = el.currentSrc || el.src;
+                if (!src) return;
+                if (src === msg.media?.url || src === msg.voiceUrl || src === msg.audio) {
+                    el.pause();
+                    el.removeAttribute('src');
+                    el.load();
+                }
+                } catch (e) {}
+            });
+            } catch (e) {}
+
+            // notify server (if a websocket is available) so other clients can remove this message
+            if (window.chatSocket && window.chatSocket.readyState === WebSocket.OPEN) {
+            try {
+                window.chatSocket.send(JSON.stringify({ type: 'delete', id: msg.id }));
+            } catch (e) {}
+            }
+        } catch (e) {}
+    list.splice(idx,1);
+    saveMessages(list);
+    // notify server
+    try { if (socket && socket.connected) socket.emit('delete', id); } catch (e) { console.warn('emit delete failed', e); }
+    renderMessages();
+    }
+
+    function addMessage({text = '', media = null}){
+        const list = loadMessages();
+        const timeIso = new Date().toISOString();
+        const nick = (nickInput && nickInput.value.trim()) || localStorage.getItem(LS_NICK) || '';
+        const avatar = localStorage.getItem(LS_AVATAR) || null;
+        const entry = { id: createId(), text, time: timeIso, media, nick, avatar, replyTo: replyTargetId || null };
+    list.push(entry);
+    saveMessages(list);
+    // notify server
+    try { if (socket && socket.connected) socket.emit('message', entry); } catch (e) { console.warn('emit message failed', e); }
+        replyTargetId = null;
+        replyPreview.style.display = 'none';
+        renderMessages();
+    }
+
+    // form submit
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        const currentMedia = mediaPreview.dataset.current ? JSON.parse(mediaPreview.dataset.current) : null;
+        if (!text && !currentMedia) return;
+        addMessage({text, media: currentMedia});
+        input.value = '';
+        clearPreview();
+    });
+
+    // Enter to send
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            form.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true}));
+        }
+    });
+
+    // file preview
+    function clearPreview(){
+        mediaPreview.innerHTML = '';
+        delete mediaPreview.dataset.current;
+        if (fileInput) fileInput.value = '';
+    }
+    if (fileInput){
+        fileInput.addEventListener('change', ()=>{
+            const file = fileInput.files && fileInput.files[0];
+            clearPreview();
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+            mediaPreview.dataset.current = JSON.stringify({type: file.type, url});
+            if (file.type.startsWith('image/')){
+                const img = document.createElement('img'); img.src = url; mediaPreview.appendChild(img);
+            } else if (file.type.startsWith('video/')){
+                const v = document.createElement('video'); v.src = url; v.controls = true; mediaPreview.appendChild(v);
+            } else {
+                const p = document.createElement('div'); p.textContent = t('previewNA'); mediaPreview.appendChild(p);
+            }
+            const remove = document.createElement('button'); remove.textContent = t('remove'); remove.className='btn-plain';
+            remove.style.marginTop='8px';
+            remove.addEventListener('click', ()=>{ try{ URL.revokeObjectURL(url); }catch(e){}; clearPreview(); });
+            mediaPreview.appendChild(remove);
+        });
+    }
+
+    // theme
+    function applyTheme(theme){
+        if (theme === 'light') document.body.classList.add('light'); else document.body.classList.remove('light');
+        if (themeSelect) themeSelect.value = theme;
+        localStorage.setItem(LS_THEME, theme);
+    }
+    applyTheme(localStorage.getItem(LS_THEME) || 'dark');
+    if (themeSelect) themeSelect.addEventListener('change', ()=>applyTheme(themeSelect.value));
+
+    // nick
+    const savedNick = localStorage.getItem(LS_NICK) || '';
+    if (nickInput) { nickInput.value = savedNick; nickInput.addEventListener('change', ()=>{
+        const v = nickInput.value.trim(); localStorage.setItem(LS_NICK, v);
+        renderMessages();
+    }); nickInput.addEventListener('keyup', (e)=>{ if (e.key === 'Enter') nickInput.blur(); }); }
+
+    // avatar: load and display
+    function updateAvatarDisplays(){
+        const a = localStorage.getItem(LS_AVATAR);
+        // main small display
+        renderAvatarEl(userAvatarDisplay, a, nickInput.value || '');
+        // current avatar in settings
+        renderAvatarEl(currentAvatar, a, nickInput.value || '');
+    }
+    updateAvatarDisplays();
+
+    // avatar input change -> read as dataURL and save
+    avatarInput && avatarInput.addEventListener('change', ()=>{
+        const f = avatarInput.files && avatarInput.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try { localStorage.setItem(LS_AVATAR, reader.result); } catch(e) {
+                alert('Cannot save avatar (storage limit).');
+                return;
+            }
+            updateAvatarDisplays();
+            renderMessages();
+        };
+        reader.readAsDataURL(f);
+    });
+    removeAvatarBtn && removeAvatarBtn.addEventListener('click', ()=>{
+        localStorage.removeItem(LS_AVATAR);
+        updateAvatarDisplays();
+        renderMessages();
+    });
+
+    // reply cancel
+    cancelReplyBtn.addEventListener('click', ()=>{
+        replyTargetId = null;
+        replyPreview.style.display = 'none';
+    });
+
+    // clear storage
+    clearStorageBtn.addEventListener('click', ()=>{
+        if (!confirm(t('clearConfirm'))) return;
+        const list = loadMessages();
+        list.forEach(m => { try{ if (m.media && m.media.url && m.media.url.startsWith('blob:')) URL.revokeObjectURL(m.media.url); }catch(e){} });
+        localStorage.removeItem(LS_MESSAGES);
+        renderMessages();
+    });
+
+    // accessibility focus
+    input && input.focus();
+
+    // initial render
+    renderMessages();
+
+    // expose small API
+    window._chat = {addMessage, renderMessages, clearPreview, applyTheme, deleteMessage};
+
+    // unload cleanup
+    window.addEventListener('beforeunload', ()=>{
+        try {
+            const list = loadMessages();
+            list.forEach(m => { if (m.media && m.media.url && m.media.url.startsWith('blob:')) URL.revokeObjectURL(m.media.url); });
+        } catch(e){}
+    });
+
+    // initialize lang selector UI after load
+    langSelect.value = currentLang;
+    updateAvatarDisplays();
+})();
+</script>
+</body>
+</html>
